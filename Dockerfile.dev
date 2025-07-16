@@ -1,0 +1,30 @@
+# Development Dockerfile with hot-reloading
+FROM node:20-alpine
+
+# Install build dependencies
+RUN apk add --no-cache python3 make g++ bash
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY tsconfig*.json ./
+
+# Install all dependencies (including dev)
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Set environment to development
+ENV NODE_ENV=development
+
+# Expose ports
+EXPOSE 3000 9090 9229
+
+# Enable Node.js debugging
+ENV NODE_OPTIONS="--inspect=0.0.0.0:9229"
+
+# Start with hot-reloading
+CMD ["npm", "run", "dev"]

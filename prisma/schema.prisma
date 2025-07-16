@@ -1,0 +1,133 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Agent model
+model Agent {
+  id                String          @id @default(cuid())
+  persona           String          @unique
+  state             String          @default("idle")
+  capabilities      Json
+  traits            Json
+  responsibilities  String[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  // Relations
+  tasks             Task[]          @relation("AssignedTasks")
+  createdTasks      Task[]          @relation("CreatedTasks")
+  sentMessages      Message[]       @relation("SentMessages")
+  receivedMessages  Message[]       @relation("ReceivedMessages")
+  metrics           AgentMetrics?
+  
+  @@index([persona])
+  @@index([state])
+}
+
+// Task model
+model Task {
+  id              String          @id @default(cuid())
+  title           String
+  description     String
+  status          String          @default("pending")
+  priority        String          @default("MEDIUM")
+  phase           String?
+  dependencies    String[]
+  metadata        Json?
+  
+  // Relations
+  assignedTo      String?
+  assignedAgent   Agent?          @relation("AssignedTasks", fields: [assignedTo], references: [persona])
+  createdBy       String
+  createdByAgent  Agent           @relation("CreatedTasks", fields: [createdBy], references: [persona])
+  
+  // Timestamps
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  startedAt       DateTime?
+  completedAt     DateTime?
+  
+  // Results
+  result          Json?
+  error           String?
+  
+  @@index([status])
+  @@index([priority])
+  @@index([assignedTo])
+  @@index([createdBy])
+}
+
+// Message model for inter-agent communication
+model Message {
+  id            String          @id @default(cuid())
+  fromAgent     String
+  toAgent       String
+  messageType   String
+  payload       Json
+  priority      String          @default("MEDIUM")
+  timestamp     DateTime        @default(now())
+  processed     Boolean         @default(false)
+  processedAt   DateTime?
+  
+  // Relations
+  sender        Agent           @relation("SentMessages", fields: [fromAgent], references: [persona])
+  receiver      Agent           @relation("ReceivedMessages", fields: [toAgent], references: [persona])
+  
+  @@index([fromAgent])
+  @@index([toAgent])
+  @@index([messageType])
+  @@index([processed])
+}
+
+// Agent metrics
+model AgentMetrics {
+  id                    String      @id @default(cuid())
+  agentPersona          String      @unique
+  tasksCompleted        Int         @default(0)
+  tasksInProgress       Int         @default(0)
+  averageCompletionTime Float       @default(0)
+  qualityScore          Float       @default(1.0)
+  collaborationScore    Float       @default(1.0)
+  lastActive            DateTime    @default(now())
+  
+  // Relations
+  agent                 Agent       @relation(fields: [agentPersona], references: [persona])
+  
+  @@index([agentPersona])
+}
+
+// System event log
+model SystemEvent {
+  id          String      @id @default(cuid())
+  eventType   String
+  source      String
+  data        Json
+  timestamp   DateTime    @default(now())
+  
+  @@index([eventType])
+  @@index([source])
+  @@index([timestamp])
+}
+
+// Phase transitions
+model PhaseTransition {
+  id              String      @id @default(cuid())
+  fromPhase       String
+  toPhase         String
+  initiatedBy     String
+  reason          String?
+  metadata        Json?
+  timestamp       DateTime    @default(now())
+  
+  @@index([fromPhase])
+  @@index([toPhase])
+  @@index([timestamp])
+}

@@ -1,0 +1,153 @@
+version: '3.8'
+
+services:
+  # Redis service for message bus and caching
+  redis:
+    image: redis:7-alpine
+    container_name: nex-t1-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nex-t1-network
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    container_name: nex-t1-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-nexai}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-nexai123}
+      POSTGRES_DB: ${DB_NAME:-nex_t1_heavy}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-nexai}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nex-t1-network
+
+  # Main application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: nex-t1-app
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Database configuration
+      DATABASE_URL: postgresql://${DB_USER:-nexai}:${DB_PASSWORD:-nexai123}@postgres:5432/${DB_NAME:-nex_t1_heavy}
+      # Redis configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # JWT configuration
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-here}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-7d}
+      # Agent configuration
+      MAX_CONCURRENT_TASKS: ${MAX_CONCURRENT_TASKS:-10}
+      TASK_TIMEOUT_MS: ${TASK_TIMEOUT_MS:-300000}
+      # Monitoring
+      ENABLE_METRICS: ${ENABLE_METRICS:-true}
+      METRICS_PORT: ${METRICS_PORT:-9090}
+    ports:
+      - "3000:3000"
+      - "9090:9090"  # Metrics port
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+    networks:
+      - nex-t1-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: nex-t1-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    networks:
+      - nex-t1-network
+    profiles:
+      - with-nginx
+
+  # Prometheus for metrics collection (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nex-t1-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - nex-t1-network
+    profiles:
+      - monitoring
+
+  # Grafana for visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nex-t1-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    networks:
+      - nex-t1-network
+    profiles:
+      - monitoring
+
+networks:
+  nex-t1-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:

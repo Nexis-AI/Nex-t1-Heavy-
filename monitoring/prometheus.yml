@@ -1,0 +1,78 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'nex-t1-heavy'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - 'alertmanager:9093'
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "alerts/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Nex-t1 Heavy application metrics
+  - job_name: 'nex-t1-app'
+    scrape_interval: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['app:9090']
+        labels:
+          service: 'nex-t1-heavy'
+          component: 'main-app'
+
+  # Redis exporter (if using)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+          component: 'cache'
+
+  # PostgreSQL exporter (if using)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgresql'
+          component: 'database'
+
+  # Node exporter for system metrics (if using)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+          component: 'system'
+
+  # Agent-specific metrics
+  - job_name: 'agents'
+    scrape_interval: 30s
+    metrics_path: '/api/agents/metrics'
+    static_configs:
+      - targets: ['app:3000']
+        labels:
+          service: 'nex-t1-heavy'
+          component: 'agents'
+
+  # Task queue metrics
+  - job_name: 'task-queue'
+    scrape_interval: 30s
+    metrics_path: '/api/queue/metrics'
+    static_configs:
+      - targets: ['app:3000']
+        labels:
+          service: 'nex-t1-heavy'
+          component: 'task-queue'
